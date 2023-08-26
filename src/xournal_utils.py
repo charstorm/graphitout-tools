@@ -3,12 +3,33 @@
 This script contains the utility functions required to work with Xournal++ files (.xopp).
 Xournal++ files are gzip compressed XML files.
 
-Compression:
+Compression and Decompression:
 I wanted to use Xournal to create hand-written explanation slides for graphitout project.
 Since the xopp files were binary, keeping them in the repo was a problem. I unzipped the
 files to keep it in the original text (xml) format. But the file was too big. I looked
 inside the file and saw that it was keeping raw x,y data. Hence I decided to remove some
 precision and code the differences to reduce the size.
+
+Some repeating XML attributes are copied from previous one. It is controlled by a new
+attribute prev="1".
+
+Supported commands:
+
+1. compress
+
+    xournal_utils.py compress -i input.xopp -o compressed.xml.xz
+
+    Notes:
+    - output can also be .xml, which is useful for version management
+    - this is a LOSSY compression! I am using a setting that works for my use-case.
+
+2. decompress
+
+    xournal_utils.py compress -i compressed.xml.xz -o decompressed.xopp
+
+For my files, I get a compression to 20% with xml.xz and 60% with basic .xml
+
+To understand this script, start at process_compress_decompress().
 """
 
 import gzip
@@ -30,6 +51,8 @@ compressed_stroke_tag = "strk"
 min_stroke_str_size = 20
 
 # Scaling to be applied to both x and y values
+# Obtained by trial and error. Even with xyscale=10, it was difficult to spot difference
+# between original and reconstructed.
 xyscale = 32
 
 # Char to split between x values and y values
@@ -48,6 +71,9 @@ def copy_all_attrib(src, dst):
 
 
 def encode_float_values(values: list[float]) -> str:
+    """
+    Apply scaling, calculate diff, encode them, and return combined result
+    """
     int_values = [int(round(val * xyscale)) for val in values]
     prev = 0
     result = []
@@ -62,6 +88,9 @@ def encode_float_values(values: list[float]) -> str:
 
 
 def decode_float_values(text: str) -> list[float]:
+    """
+    Do the opposite of encode_float_values
+    """
     text_with_space = text.replace("+", " +").replace("-", " -")
     splits = text_with_space.encode().split()
     result = []
@@ -79,6 +108,9 @@ def max_abs_diff(seq1: list[float], seq2: list[float]) -> float:
 
 
 def compress_stroke_text(text: str) -> str | None:
+    """
+    Split numbers to x and y values, compress each channel, and return the combined result
+    """
     splits = text.split()
     if len(splits) % 2 != 0:
         raise RuntimeError(f"Expects count to be even. Got {len(splits)}")
@@ -98,7 +130,7 @@ def compress_stroke_text(text: str) -> str | None:
             decoded_values = decode_float_values(encoded_values)
             if len(decoded_values) != len(real_values):
                 raise RuntimeError(
-                    "Encode/decode size mistmatch: "
+                    "Encode/decode size mismatch: "
                     f"{len(decoded_values)} != {len(real_values)}"
                 )
             max_error = max_abs_diff(decoded_values, real_values)
@@ -109,6 +141,9 @@ def compress_stroke_text(text: str) -> str | None:
 
 
 def decompress_stroke_text(text: str) -> str:
+    """
+    Do the opposite of compress_stroke_text
+    """
     text = text.strip()
     xyparts = text.split(xydelim)
     if len(xyparts) != 2:
@@ -118,7 +153,7 @@ def decompress_stroke_text(text: str) -> str:
     yvalues = decode_float_values(ypart)
     if len(xvalues) != len(yvalues):
         raise RuntimeError(
-            "Length mistmatch between x and y values: " f"{len(xvalues)} != {len(yvalues)}"
+            "Length mismatch between x and y values: " f"{len(xvalues)} != {len(yvalues)}"
         )
     parts = []
     for xv, yv in zip(xvalues, yvalues):
@@ -127,6 +162,11 @@ def decompress_stroke_text(text: str) -> str:
 
 
 def find_all_strokes_compress_replace(root: Element) -> Element:
+    """
+    Go over all the <stroke> nodes, replace with new element with compressed text.
+
+    Also keep track of attribs from previous stroke element. 
+    """
     prev_attribs = None
     total_before = 0
     total_after = 0
@@ -168,6 +208,11 @@ def find_all_strokes_compress_replace(root: Element) -> Element:
 
 
 def decompress_all_strokes_replace(root: Element) -> Element:
+    """
+    Do the opposite of find_all_strokes_compress_replace.
+
+    If attrib prev="1" is given, copy attributes from the pevious saved attribs.
+    """
     prev_attribs = None
     for compressed_elem in root.findall(f".//{compressed_stroke_tag}"):
         parent = compressed_elem.getparent()
@@ -222,6 +267,11 @@ def write_output(data: bytes, outfile: str) -> None:
 
 
 def process_compress_decompress(kind: str, infile: str, outfile: str) -> None:
+    """
+    Compress or decompress file based on the `kind`.
+
+    This is the core function of this script.
+    """
     input_data = read_file_bytes(infile)
     root = ET.fromstring(input_data)
     if kind == "compress":
