@@ -35,6 +35,7 @@ To understand this script, start at process_compress_decompress().
 import gzip
 import lzma
 import argparse
+import subprocess
 
 from typing import Callable
 
@@ -165,7 +166,7 @@ def find_all_strokes_compress_replace(root: Element) -> Element:
     """
     Go over all the <stroke> nodes, replace with new element with compressed text.
 
-    Also keep track of attribs from previous stroke element. 
+    Also keep track of attribs from previous stroke element.
     """
     prev_attribs = None
     total_before = 0
@@ -285,7 +286,34 @@ def process_compress_decompress(kind: str, infile: str, outfile: str) -> None:
     if kind == "decompress":
         processed_doc = first_line + processed_doc
     write_output(processed_doc, outfile)
-    xprint("Done")
+    xprint(f"Done processing: {infile} -> {outfile}")
+
+
+def find_extension_replace(
+    filename: str, check_extensions: list[str], new_ext: str | None
+) -> tuple[str, str]:
+    """
+    Returns extension_found, replaced_filename
+    """
+    extension = None
+    for ext in check_extensions:
+        if filename.endswith(ext):
+            extension = ext
+            break
+    if extension is None:
+        raise ValueError(
+            f"{filename=} does not match any extensions expected: {check_extensions}"
+        )
+    new_filename = filename
+    if new_ext is not None:
+        new_filename = filename.replace(extension, new_ext)
+    return extension, new_filename
+
+
+def generate_pdf(infile: str, outfile: str) -> None:
+    cmd = f"xournalpp {infile} -p {outfile}"
+    xprint("Running:", cmd)
+    subprocess.run(cmd, check=True, shell=True)
 
 
 def handle_compress(args: argparse.Namespace) -> None:
@@ -294,6 +322,32 @@ def handle_compress(args: argparse.Namespace) -> None:
 
 def handle_decompress(args: argparse.Namespace) -> None:
     process_compress_decompress("decompress", args.input, args.output)
+
+
+def handle_compress_multi(args: argparse.Namespace) -> None:
+    allowed_extensions = [".xopp"]
+    new_ext = ".xml.xz" if args.xz else ".xml"
+    for infile in args.input:
+        _, outfile = find_extension_replace(infile, allowed_extensions, new_ext)
+        process_compress_decompress("compress", infile, outfile)
+
+
+def handle_decompress_multi(args: argparse.Namespace) -> None:
+    allowed_extensions = [".xml.xz", ".xml"]
+    # We want a way to mark decompressed from the real ones.
+    # (x means extracted)
+    new_ext = ".x.xopp"
+    for infile in args.input:
+        _, outfile = find_extension_replace(infile, allowed_extensions, new_ext)
+        process_compress_decompress("decompress", infile, outfile)
+
+
+def handle_generate_pdf(args: argparse.Namespace) -> None:
+    allowed_extensions = [".x.xopp", ".xopp"]
+    new_ext = ".pdf"
+    for infile in args.input:
+        _, outfile = find_extension_replace(infile, allowed_extensions, new_ext)
+        generate_pdf(infile, outfile)
 
 
 def get_args() -> argparse.Namespace:
@@ -314,6 +368,22 @@ def get_args() -> argparse.Namespace:
     opt = subparser.add_argument
     opt("-i", "--input", required=True, help="input file (.xml or  (.xml or .xml.xz)")
     opt("-o", "--output", required=True, help="output file (.xopp or .xml)")
+
+    subparser = subparsers.add_parser("compress-multi", help="compress multiple files")
+    subparser.set_defaults(func=handle_compress_multi)
+    opt = subparser.add_argument
+    opt("-i", "--input", required=True, nargs="+", help="input files (.xopp)")
+    opt("--xz", action="store_true", help="compress the final result using xz")
+
+    subparser = subparsers.add_parser("decompress-multi", help="decompress multiple files")
+    subparser.set_defaults(func=handle_decompress_multi)
+    opt = subparser.add_argument
+    opt("-i", "--input", required=True, nargs="+", help="input files (.xml, .xml.xz)")
+
+    subparser = subparsers.add_parser("generate-pdf", help="convert multiple .xopp to .pdf")
+    subparser.set_defaults(func=handle_generate_pdf)
+    opt = subparser.add_argument
+    opt("-i", "--input", required=True, nargs="+", help="input files (.xopp, .x.xopp)")
 
     args = parser.parse_args()
     return args
