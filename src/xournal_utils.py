@@ -310,8 +310,8 @@ def find_extension_replace(
     return extension, new_filename
 
 
-def generate_pdf(infile: str, outfile: str) -> None:
-    cmd = f"xournalpp {infile} -p {outfile}"
+def generate_doc(infile: str, outfile: str, flag: str) -> None:
+    cmd = f"xournalpp {infile} {flag} {outfile}"
     xprint("Running:", cmd)
     subprocess.run(cmd, check=True, shell=True)
 
@@ -342,12 +342,16 @@ def handle_decompress_multi(args: argparse.Namespace) -> None:
         process_compress_decompress("decompress", infile, outfile)
 
 
-def handle_generate_pdf(args: argparse.Namespace) -> None:
+def handle_generate_doc(args: argparse.Namespace) -> None:
     allowed_extensions = [".x.xopp", ".xopp"]
-    new_ext = ".pdf"
+    flag = "-i"
+    new_ext = ".svg"
+    if args.pdf:
+        flag = "-p"
+        new_ext = ".pdf"
     for infile in args.input:
         _, outfile = find_extension_replace(infile, allowed_extensions, new_ext)
-        generate_pdf(infile, outfile)
+        generate_doc(infile, outfile, flag)
 
 
 def get_args() -> argparse.Namespace:
@@ -380,10 +384,13 @@ def get_args() -> argparse.Namespace:
     opt = subparser.add_argument
     opt("-i", "--input", required=True, nargs="+", help="input files (.xml, .xml.xz)")
 
-    subparser = subparsers.add_parser("generate-pdf", help="convert multiple .xopp to .pdf")
-    subparser.set_defaults(func=handle_generate_pdf)
+    subparser = subparsers.add_parser(
+        "generate-doc", help="convert multiple .xopp to .svg or .pdf"
+    )
+    subparser.set_defaults(func=handle_generate_doc)
     opt = subparser.add_argument
     opt("-i", "--input", required=True, nargs="+", help="input files (.xopp, .x.xopp)")
+    opt("-p", "--pdf", action="store_true", help="convert to pdf instead of svg")
 
     args = parser.parse_args()
     return args
