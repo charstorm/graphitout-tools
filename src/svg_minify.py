@@ -153,9 +153,13 @@ def compress_file(input_file: str, output_file: str) -> None:
 def handle_compress(args: argparse.Namespace) -> None:
     input_files = select_input_files(args.input_dir)
     for input_file in input_files:
-        output_file = input_file.replace(input_suffix, output_suffix)
-        compress_file(input_file, output_file)
-        xprint(f"Processed {input_file} => {output_file}")
+        try:
+            output_file = input_file.replace(input_suffix, output_suffix)
+            compress_file(input_file, output_file)
+            xprint(f"Processed {input_file} => {output_file}")
+        except Exception:
+            xprint(f"Error while processing file '{input_file}'")
+            raise
 
 
 def get_args() -> argparse.Namespace:
