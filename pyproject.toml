@@ -1,2 +1,7 @@
 [tool.black]
 line-length = 92
+
+[[tool.mypy.overrides]]
+module = "scour.*"
+ignore_missing_imports = true
+
